@@ -16,6 +16,7 @@ import {IfEmptyObject, IfAllNullableKeys} from '@shopify/useful-types';
 import {
   compile,
   Field,
+  Fragment,
   InlineFragment,
   Operation,
 } from 'graphql-tool-utilities';
@@ -33,8 +34,8 @@ export type FieldDetails = (Field | InlineFragment) & FieldMetadata;
 export interface ResolveDetails {
   type: GraphQLType;
   parent: GraphQLObjectType;
-  field: FieldDetails;
-  parentFields: FieldDetails[];
+  field: FieldDetails | Fragment;
+  parentFields: (FieldDetails | Fragment)[];
 }
 
 export interface Resolver<
@@ -178,6 +179,45 @@ export function createFiller(
   };
 }
 
+export function createFillers(schema: GraphQLSchema, options: Options = {}) {
+  const {resolvers: customResolvers = {}} = options;
+  const resolvers = new Map(
+    Object.entries({
+      ...defaultResolvers,
+      ...customResolvers,
+    }),
+  );
+
+  const context = {schema, resolvers};
+
+  return {
+    fillFragment<Data, Variables, PartialData>(
+      type: DocumentNode<Data, Variables, PartialData>,
+      data?: GraphQLFillerData<GraphQLOperation<Data, Variables, PartialData>>,
+    ): Data {
+      const fragment = Object.values(
+        compile(schema, normalizeDocument(type)).fragments,
+      )[0];
+
+      const randomTypeIndex = Math.floor(
+        Math.random() * (fragment.possibleTypes.length - 1),
+      );
+
+      return fillObject(
+        fragment.possibleTypes[randomTypeIndex],
+        fragment.possibleTypes[randomTypeIndex],
+        [fragment],
+        data,
+        // Since we are filling a fragment outside of a query or mutation, there
+        // is no concept of a request in this context.
+        {} as GraphQLRequest<any, any, any>,
+        context,
+      ) as Data;
+    },
+    fillOperation: createFiller(schema, options),
+  };
+}
+
 // The documents that come from tools like Apollo do not have all
 // the details that Apollo’s codegen utilities expect. In particular,
 // they do not include the necessary `loc` information on the top-level
@@ -197,7 +237,7 @@ function normalizeDocument(document: DocumentNode<any, any, any>) {
 function fillObject(
   type: GraphQLObjectType,
   parent: GraphQLObjectType,
-  parentFields: FieldDetails[],
+  parentFields: FieldDetails[] | Fragment[],
   partial: Thunk<{[key: string]: any} | null, any, any, any> | undefined | null,
   request: GraphQLRequest<any, any, any>,
   context: Context,
@@ -254,9 +294,10 @@ function fillObject(
             parentFields: normalizedParentFields,
           }),
         type,
-        Object.prototype.hasOwnProperty.call(ownField, 'operationType')
+        Object.prototype.hasOwnProperty.call(ownField, 'operationType') ||
+          Object.prototype.hasOwnProperty.call(ownField, 'fragmentName')
           ? []
-          : parentFields,
+          : (parentFields as FieldDetails[]),
         request,
         context,
       ),
@@ -306,7 +347,10 @@ function createValue<T>(
   partialValue: Thunk<any, any, any, any>,
   value: Thunk<T, any, any, any>,
   request: GraphQLRequest<any, any, any>,
-  details: ResolveDetails,
+  details: Omit<ResolveDetails, 'parentFields' | 'field'> & {
+    field: FieldDetails;
+    parentFields: FieldDetails[];
+  },
 ) {
   return withRandom(
     details.parentFields,

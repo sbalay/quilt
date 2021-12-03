@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Changed
+
+- Add a new function `createFillers`. The function return an object containing `fillOperation` and `fillFragment`. It's now possible to fill a fragment without a query. You can replace `createFiller` by `createFillers` if you need to be able to fill fragments. [[#2100](https://github.com/Shopify/quilt/pull/2100)]
 
 ## 1.1.5 - 2021-11-24
 
